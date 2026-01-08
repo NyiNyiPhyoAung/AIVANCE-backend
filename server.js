@@ -6,15 +6,12 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
-// ===== Load environment variables based on environment =====
+// Load environment variables
 if (process.env.NODE_ENV !== 'production') {
-  // Local development
   dotenv.config({ path: '.env.local' });
   console.log('🔹 Loaded local environment variables');
 } else {
-  // Production (Railway injects env automatically)
-  dotenv.config();
-  console.log('🔹 Loaded production environment variables');
+  console.log('🔹 Using production environment variables');
 }
 
 const app = express();
@@ -26,7 +23,7 @@ app.use(cors({
     'https://aivance-frontend.netlify.app'  // production frontend
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type','Authorization']
 }));
 
 app.use(express.json());
@@ -50,7 +47,7 @@ db.connect(err => {
 
 // ===== Auth Middleware =====
 const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
+  const token = req.headers.authorization?.split(' ')[1]; // Bearer token
   if (!token) return res.status(401).json({ message: 'Access denied' });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
@@ -61,15 +58,13 @@ const verifyToken = (req, res, next) => {
 };
 
 const adminOnly = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin access only' });
-  }
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access only' });
   next();
 };
 
 // ===== Routes =====
 
-// Register (for testing only)
+// Register (testing only)
 app.post('/register', async (req, res) => {
   const { username, password, role } = req.body;
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -88,26 +83,48 @@ app.post('/register', async (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
+  db.query('SELECT * FROM users WHERE username = ?', [username], async (err, result) => {
+    if (err) return res.status(500).json(err);
+    if (!result.length) return res.status(404).json({ message: 'User not found' });
+
+    const user = result[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ message: 'Wrong password' });
+
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ token });
+  });
+});
+
+// Contact form
+app.post('/contact', (req, res) => {
+  const { name, email, phone, company, country, title, details } = req.body;
+
   db.query(
-    'SELECT * FROM users WHERE username = ?',
-    [username],
-    async (err, result) => {
+    'INSERT INTO contacts (name,email,phone,company,country,title,details) VALUES (?,?,?,?,?,?,?)',
+    [name, email, phone, company, country, title, details],
+    err => {
       if (err) return res.status(500).json(err);
-      if (!result.length) return res.status(404).json({ message: 'User not found' });
-
-      const user = result[0];
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(401).json({ message: 'Wrong password' });
-
-      const token = jwt.sign(
-        { id: user.id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-      );
-
-      res.json({ token });
+      res.json({ message: 'Inquiry submitted!' });
     }
   );
 });
 
-// Contact form
+// Admin: view contacts
+app.get('/contact', verifyToken, adminOnly, (req, res) => {
+  db.query('SELECT * FROM contacts ORDER BY id DESC', (err, result) => {
+    if (err) return res.status(500).json(err);
+    res.json(result);
+  });
+});
+
+// ===== Start Server =====
+const PORT = process.env.PORT || 5050;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
