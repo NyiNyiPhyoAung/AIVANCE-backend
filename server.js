@@ -4,15 +4,26 @@ const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+// ===== Load environment variables based on environment =====
+if (process.env.NODE_ENV !== 'production') {
+  // Local development
+  dotenv.config({ path: '.env.local' });
+  console.log('🔹 Loaded local environment variables');
+} else {
+  // Production (Railway injects env automatically)
+  dotenv.config();
+  console.log('🔹 Loaded production environment variables');
+}
 
 const app = express();
 
 // ===== Middleware =====
 app.use(cors({
   origin: [
-    'http://localhost:5173',          // local frontend
-    'https://aivance-frontend.netlify.app/' // production frontend
+    'http://localhost:5173',                 // local frontend
+    'https://aivance-frontend.netlify.app'  // production frontend
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -58,7 +69,7 @@ const adminOnly = (req, res, next) => {
 
 // ===== Routes =====
 
-// Register (testing only)
+// Register (for testing only)
 app.post('/register', async (req, res) => {
   const { username, password, role } = req.body;
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -100,29 +111,3 @@ app.post('/login', (req, res) => {
 });
 
 // Contact form
-app.post('/contact', (req, res) => {
-  const { name, email, phone, company, country, title, details } = req.body;
-
-  db.query(
-    'INSERT INTO contacts (name,email,phone,company,country,title,details) VALUES (?,?,?,?,?,?,?)',
-    [name, email, phone, company, country, title, details],
-    err => {
-      if (err) return res.status(500).json(err);
-      res.json({ message: 'Inquiry submitted!' });
-    }
-  );
-});
-
-// Admin: view contacts
-app.get('/contact', verifyToken, adminOnly, (req, res) => {
-  db.query('SELECT * FROM contacts ORDER BY id DESC', (err, result) => {
-    if (err) return res.status(500).json(err);
-    res.json(result);
-  });
-});
-
-// ===== Start Server =====
-const PORT = process.env.PORT || 5050;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
